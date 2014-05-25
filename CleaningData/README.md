@@ -19,7 +19,7 @@ The dataset being manipulated is available on the UC Irvine Center for Machine L
 The Human Activity Recognition Using Smartphones Dataset is available at http://archive.ics.uci.edu/ml/datasets/Human+Activity+Recognition+Using+Smartphones
 For this class, hence this exercise, the dataset was made available at https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip.
 
-##steps:
+##Steps:
 These are the steps taken by the script
 * Verify the existence of a data folder. if the folder doesn't exist, it is created and set as default working folder
 * Download the zipped dataset at https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip in the data folder

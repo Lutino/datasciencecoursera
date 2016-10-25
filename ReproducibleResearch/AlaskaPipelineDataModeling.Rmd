@@ -1,0 +1,500 @@
+---
+title: "Alaska Pipeline Case Study"
+author: "NIST Engineering Statistics Handbook"
+date: "September 10, 2016"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+## Goal
+This example illustrates the construction of a linear regression model for Alaska pipeline ultrasonic calibration data. This case study demonstrates the use of **transformations** and **weighted fits** to deal with the violation of the assumption of **constant standard deviations for the random errors**. This assumption is also called homogeneous variances for the errors
+
+## Background and Data
+
+The Alaska pipeline data consists of in-field ultrasonic measurements of the depths of defects in the Alaska pipeline. The depth of the defects were then re-measured in the laboratory. These measurements were performed in six different batches.
+The data were analyzed to calibrate the bias of the field measurements relative to the laboratory measurements. In this analysis, the field measurement is the response variable and the laboratory measurement is the predictor variable.
+
+These data were provided by Harry Berger, who was at the time a scientist for the Office of the Director of the Institute of Materials Research (now the Materials Science and Engineering Laboratory) of NIST. These data were used for a study conducted for the Materials Transportation Bureau of the U.S. Department of Transportation.
+
+```{r}
+#Create vector with dependent variable, field defect size
+fdef = c(18,38,15,20,18,36,20,43,45,65,43,38,33,10,50,10,50,15,53,60,18,
+         38,15,20,18,36,20,43,45,65,43,38,33,10,50,10,50,15,53,15,37,15,
+         18,11,35,20,40,50,36,50,38,10,75,10,85,13,50,58,58,48,12,63,10,
+         63,13,28,35,63,13,45,9,20,18,35,20,38,50,70,40,21,19,10,33,16,5,
+         32,23,30,45,33,25,12,53,36,5,63,43,25,73,45,52,9,30,22,56,15,45)
+
+#Create vector with independent variable, lab defect size
+ldef = c(20.2,56.0,12.5,21.2,15.5,39.0,21.0,38.2,55.6,81.9,39.5,56.4,40.5,
+         14.3,81.5,13.7,81.5,20.5,56.0,80.7,20.0,56.5,12.1,19.6,15.5,38.8,
+         19.5,38.0,55.0,80.0,38.5,55.8,38.8,12.5,80.4,12.7,80.9,20.5,55.0,
+         19.0,55.5,12.3,18.4,11.5,38.0,18.5,38.0,55.3,38.7,54.5,38.0,12.0,
+         81.7,11.5,80.0,18.3,55.3,80.2,80.7,55.8,15.0,81.0,12.0,81.4,12.5,
+         38.2,54.2,79.3,18.2,55.5,11.4,19.5,15.5,37.5,19.5,37.5,55.5,80.0,
+         37.5,15.5,23.7,9.8,40.8,17.5,4.3,36.5,26.3,30.4,50.2,30.1,25.5,
+         13.8,58.9,40.0,6.0,72.5,38.8,19.4,81.5,77.4,54.6,6.8,32.6,19.8,
+         58.8,12.9,49.0)
+
+#Create vector with batch indicator
+bat = c(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+        2,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,
+        4,4,4,4,4,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+        5,6,6,6,6,6,6,6)
+
+## Save data in a data frame and determine number of observations
+Batch <- as.factor(bat)
+df <- data.frame(fdef,ldef,Batch)
+len <- length(Batch)
+
+```
+## Check for Batch Effect
+
+###Plot of Raw Data
+As with any regression problem, it is always a good idea to plot the raw data first. The following is a **scatter plot** of the raw data.
+
+```{r}
+##  Plot the data
+par(cex=1.25)
+xax = "Lab Defect Size"
+yax = "Field Defect Size"
+title = "Alaska Pipeline Ultrasonic Calibration Data"
+
+plot(ldef,fdef,xlab=xax,ylab=yax,main=title,col="blue")
+
+```
+
+This scatter plot shows that a straight line fit is a good initial candidate model for these data.
+
+### Plot by Batch
+These data were collected in six distinct batches. The first step in the analysis is to determine if there is a batch effect.
+
+In this case, the scientist was not inherently interested in the batch. That is, batch is a nuisance factor and, if reasonable, we would like to analyze the data as if it came from a single batch. However, we need to know that this is, in fact, a reasonable assumption to make.
+
+### Conditional Plot
+
+We first generate a **conditional plot** where we condition on the batch.
+
+```{r}
+
+## Generate conditional plot
+library("lattice")
+##trellis.device(new = TRUE, col = FALSE)
+xyplot(fdef ~ ldef | Batch, data=df,
+      main = title,
+      layout=c(3,2),
+      col=4,
+      xlab=list(xax,cex=1.1),
+      ylab=list(yax,cex=1.1),
+      strip=function(...)
+      strip.default(...,strip.names=c(T,T)))
+## plot(FIG)
+
+```
+This conditional plot shows a scatter plot for each of the six batches on a single page. Each of these plots shows a similar pattern.
+
+### Linear Correlation and Related Plots
+
+We can follow up the conditional plot with a **linear correlation** plot, a **linear intercept** plot, a **linear slope** plot, and a **linear residual standard deviation** plot. These four plots show the correlation, the intercept and slope from a linear fit, and the residual standard deviation for linear fits applied to each batch. These plots show how a linear fit performs across the six batches.
+
+```{r}
+
+##  Batch analysis
+x = ldef
+y = fdef
+xydf = data.frame(x,y,Batch)
+out = by(xydf,xydf$Batch,function(x) lm(y~x,data=x))
+lapply(out,summary)
+
+## Save batch regression results 
+outs = sapply(out,summary)
+outc = sapply(out,coef)
+fitse = t(outs[6,])
+fitse = c(fitse[[1]],fitse[[2]],fitse[[3]],fitse[[4]],fitse[[5]],fitse[[6]])
+r2 = t(outs[8,])
+r2 = c(r2[[1]],r2[[2]],r2[[3]],r2[[4]],r2[[5]],r2[[6]])
+b0 = t(outc[1,])
+b1 = t(outc[2,])
+
+##  Batch plots
+par(mfrow=c(2,2))
+id = c(1:length(b0))
+xax2 = "Batch Number"
+
+plot(id,r2,xlab=xax2,ylab="Correlation",ylim=c(.8,1),
+     col="blue",pch=16,cex=1.25)
+abline(h=mean(r2))
+
+plot(id,b0[1,],xlab=xax2,ylab="Intercept",ylim=c(0,8),
+     col="blue",pch=16,cex=1.25)
+abline(h=mean(b0))
+
+plot(id,b1[1,],xlab=xax2,ylab="Slope",ylim=c(.5,.9),
+     col="blue",pch=16,cex=1.25)
+abline(h=mean(b1))
+
+plot(id,fitse,xlab=xax2,ylab="Residual SD",ylim=c(0,7),
+     col="blue",pch=16,cex=1.25)
+abline(h=mean(fitse))
+
+par(mfrow=c(1,1))
+
+```
+The linear correlation plot (upper left), which shows the correlation between field and lab defect sizes versus the batch, indicates that batch six has a somewhat stronger linear relationship between the measurements than the other batches do. This is also reflected in the significantly lower residual standard deviation for batch six shown in the residual standard deviation plot (lower right), which shows the residual standard deviation versus batch. The slopes all lie within a range of 0.6 to 0.9 in the linear slope plot (lower left) and the intercepts all lie between 2 and 8 in the linear intercept plot (upper right).
+
+### Treat Batch as Homogeneous
+
+These summary plots, in conjunction with the conditional plot above, show that treating the data as a single batch is a reasonable assumption to make. None of the batches behaves badly compared to the others and none of the batches requires a significantly different fit from the others.
+
+These two plots provide a good pair. The plot of the fit statistics allows quick and convenient comparisons of the overall fits. However, the conditional plot can reveal details that may be hidden in the summary plots. For example, we can more readily determine the existence of clusters of points and outliers, curvature in the data, and other similar features.
+
+Based on these plots we will ignore the batch variable for the remaining analysis.
+
+## 	Initial Linear Fit
+Based on the initial plot of the data, we first fit a straight-line model to the data.
+```{r}
+## Straight line regression analysis
+out = lm(fdef~ldef)
+summary(out)
+
+```
+### 6-Plot for Model Validation
+When there is a single independent variable, the 6-plot provides a convenient method for initial model validation
+
+```{r}
+## Residual 6-plot
+par(mfrow=c(3,2))
+plot(ldef,fdef,xlab="Lab Defect Size",
+     ylab="Field Defect Size",main="Field Defect Size vs Lab Defect Size")
+abline(reg=out)
+plot(ldef,out$residuals,ylab="Residuals",xlab="Lab Defect Size",
+     main="Residuals vs Lab Defect Size")
+abline(h=0, col = "gray60", lty=2)
+
+plot(out$fitted.values,out$residuals,ylab="Residuals",xlab="Predicted",
+     main="Residual vs Predicted")
+abline(h=0, col = "gray60", lty=2)
+
+plot(out$residuals[2:len],out$residuals[1:len-1],ylab="Residuals",
+     xlab="Lag 1 Residuals",main="Lag Plot")
+abline(h=0, col = "gray60", lty=2)
+
+hist(out$residuals,ylab="Frequency",xlab="Residuals",main="Histogram")
+
+qqnorm(out$residuals,main="Normal Probability Plot")
+
+```
+**The basic assumptions for regression models are that the errors are random observations from a normal distribution with mean of zero and constant standard deviation (or variance)**.
+
+The plots on the first row show that the residuals have increasing variance as the value of the independent variable (lab) increases in value. This indicates that the assumption of constant standard deviation, or homogeneity of variances, is violated.
+
+In order to see this more clearly, we will generate full- size plots of the predicted values with the data and the residuals against the independent variable.
+
+### Plot of Predicted Values with Original Data
+
+```{r}
+## Generate plot of raw data with overlaid regression function
+par(mfrow=c(1,1),cex=1.25)
+plot(ldef,fdef,ylab="Field Defect Size",xlab="Lab Defect Size", col="blue")
+abline(reg=out)
+title("Alaska Pipeline Ultrasonic Calibration Data",line=2)
+title("With Unweighted Line",line=1)
+
+```
+This plot shows more clearly that the assumption of homogeneous variances for the errors may be violated.
+
+### Plot of Residual Values Against Independent Variable
+```{r}
+## Plot residuals versus lab defect size
+par(mfrow=c(1,1),cex=1.25)
+plot(ldef,out$residuals, xlab="Lab Defect Size", ylab="Residuals",
+     main="Alaska Pipeline Data Residuals - Unweighted Fit",
+     cex=1.25, col="blue")
+abline(h=0)
+```
+This plot also shows more clearly that the assumption of homogeneous variances is violated. This assumption, along with the assumption of constant location, are typically easiest to see on this plot.
+
+### Non-Homogeneous Variances
+Because the last plot shows that the variances may differ more that slightly, we will address this issue by transforming the data or using weighted least squares.
+
+## Transformations to Improve Fit and Equalize Variances
+
+### Transformations
+In regression modeling, we often apply transformations to achieve the following two goals:
+* to satisfy the homogeneity of variances assumption for the errors.
+* to linearize the fit as much as possible.
+Some care and judgment is required in that these two goals can conflict. We generally try to achieve homogeneous variances first and then address the issue of trying to linearize the fit.
+
+### Plot of Common Transformations to Obtain Homogeneous Variances
+
+The first step is to try transforming the response variable to find a tranformation that will equalize the variances. In practice, the square root, ln, and reciprocal transformations often work well for this purpose. We will try these first.
+```{r}
+## Transformations of response variable
+lnfdef = log(fdef)
+sqrtfdef = sqrt(fdef)
+invfdef = 1/fdef
+
+## Plot transformed response variable
+par(mfrow=c(2,2))
+xax = "Lab Defect Size"
+plot(ldef,fdef,xlab=xax,ylab="Field Defect Size",col="blue")
+plot(ldef,sqrtfdef,xlab=xax,ylab="Sqrt(Field Defect Size)",col="blue")
+plot(ldef,lnfdef,xlab=xax,ylab="ln(Field Defect Size)",col="blue")
+plot(ldef,invfdef,xlab=xax,ylab="1/Field Defect Size",col="blue")
+title(main="Transformations of Response Variable",outer=TRUE,line=-2)
+```
+In examining these plots, we are looking for the plot that shows the most constant variability across the horizontal range of the plot.
+
+This plot indicates that the ln transformation is a good candidate model for achieving the most homogeneous variances.
+
+### Plot of Common Transformations to Linearize the Fit
+One problem with applying the above transformation is that the plot indicates that a straight-line fit will no longer be an adequate model for the data. We address this problem by attempting to find a transformation of the predictor variable that will result in the most linear fit. In practice, the square root, ln, and reciprocal transformations often work well for this purpose. We will try these first.
+```{r}
+## Transformations of predictor variable
+lnldef = log(ldef)
+sqrtldef = sqrt(ldef)
+invldef = 1/ldef
+
+## Plot transformed predictor variable
+par(mfrow=c(2,2))
+yax = "ln(Field Defect Size)"
+plot(ldef,lnfdef,xlab="Lab Defect Size", ylab=yax, col="blue")
+plot(sqrtldef,lnfdef,xlab="Sqrt(Lab Defect Size)", ylab=yax, col="blue")
+plot(lnldef,lnfdef,xlab="ln(Lab Defect Size)", ylab=yax, col="blue")
+plot(invldef,lnfdef,xlab="1/Lab Defect Size", ylab=yax, col="blue")
+title(main="Transformations of Predictor Variable",outer=TRUE,line=-2)
+```
+### Box-Cox Linearity Plot
+The previous step can be approached more formally by the use of the **Box-Cox linearity plot**. The ?? value on the x axis corresponding to the maximum correlation value on the y axis indicates the power transformation that yields the most linear fit.
+
+```{r}
+##  Box-Cox linearity plot
+for (i in (0:100)){
+    alpha = -2 + 4*i/100
+    if (alpha != 0){
+    tx = ((ldef**alpha) - 1)/alpha
+    temp = lm(lnfdef~tx)
+    temps = summary(temp)
+    if(i==0) {rsq = temps$r.squared
+              alp = alpha}
+    else {rsq = rbind(rsq,temps$r.squared)
+          alp = rbind(alp,alpha)}
+    }}
+rcor = sqrt(rsq)
+par(mfrow=c(1,1),cex=1.25)
+plot(alp,rcor,type="l",xlab="Alpha",ylab="Correlation",
+     main="Box-Cox Linearity Plot ln(Field) Lab",
+     ylim=c(.6,1), col="blue")
+
+```
+This plot indicates that a value of -0.1 achieves the most linear fit.
+
+In practice, for ease of interpretation, we often prefer to use a common transformation, such as the ln or square root, rather than the value that yields the mathematical maximum. However, the Box-Cox linearity plot still indicates whether our choice is a reasonable one. That is, we might sacrifice a small amount of linearity in the fit to have a simpler model.
+
+In this case, a value of 0.0 would indicate a ln transformation. Although the optimal value from the plot is -0.1, the plot indicates that any value between -0.2 and 0.2 will yield fairly similar results. For that reason, we choose to stick with the common ln transformation.
+
+### ln-ln Fit
+Based on the above plots, we choose to fit a ln-ln model.
+```{r}
+## Regression for ln-ln transformed variables
+outt = lm(lnfdef~lnldef)
+summary(outt)
+```
+Note that although the residual standard deviation is significantly lower than it was for the original fit, we cannot compare them directly since the fits were performed on different scales.
+### Plot of Predicted Values
+
+```{r}
+## Plot data with overlaid regression function
+par(mfrow=c(1,1),cex=1.25)
+plot(lnldef,lnfdef,xlab="ln(Lab Defect Size)",ylab="ln(Field Defect Size)",
+     main="Transformed Alaska Pipeline Data with Fit",col="blue")
+abline(reg=outt)
+```
+The plot of the predicted values with the transformed data indicates a good fit. In addition, the variability of the data across the horizontal range of the plot seems relatively constant
+
+### 6-Plot of Fit
+```{r}
+## Residual 6-plot
+par(mfrow=c(3,2))
+plot(lnldef,lnfdef,xlab="ln(Lab Defect Size)",ylab="ln(Field Defect Size)",
+     main="ln(Field Defect Size vs ln(Lab Defect Size)")
+abline(reg=outt)
+
+plot(lnfdef,outt$residuals, xlab="ln(Lab Defect Size)",ylab="Residuals",
+     main="Residual vs ln(Lab Defect Size)")
+abline(h=0, col = "gray60", lty=2)
+
+plot(outt$fitted.values,outt$residuals,ylab="Residuals",xlab="Predicted",
+     main="Residual vs Predicted")
+abline(h=0, col = "gray60", lty=2)
+
+plot(outt$residuals[2:len],outt$residuals[1:len-1],ylab="Residuals",
+     xlab="Lag 1 Residuals",main="Lag Plot")
+abline(h=0, col = "gray60", lty=2)
+
+hist(outt$residuals,ylab="Frequency",xlab="Residuals",main="Histogram")
+qqnorm(outt$residuals,main="Normal Probability Plot")
+
+```
+Since we transformed the data, we need to check that all of the regression assumptions are now valid.
+The 6-plot of the residuals indicates that all of the regression assumptions are now satisfied.
+
+### Plot of Residuals
+```{r}
+## Plot residuals versus ln(lab defect size)
+par(mfrow=c(1,1),cex=1.25)
+plot(lnldef,outt$residuals, xlab="ln(Lab Defect Size)",
+     ylab="Residuals", main="Residuals from Fit to Transformed Data",
+     cex=1.25, col="blue")
+abline(h=0)
+```
+In order to see more detail, we generate a full-size plot of the residuals versus the predictor variable, as shown above. This plot suggests that the assumption of homogeneous variances is now met.
+
+## Weighting to Improve Fit
+
+### Weighting
+
+Another approach when the assumption of constant standard deviation of the errors (i.e. homogeneous variances) is violated is to perform a **weighted fit**. In a weighted fit, we give less weight to the less precise measurements and more weight to more precise measurements when estimating the unknown parameters in the model.
+
+### Fit for Estimating Weights
+For the pipeline data, we chose approximate replicate groups so that each group has four observations (the last group only has three). This was done by first sorting the data by the predictor variable and then taking four points in succession to form each replicate group.
+Using the power function model with the data for estimating the weights, the following results for the fit of ln(variances) against ln(means) for the replicate groups were generated.
+
+```{r}
+## Determine replicate groups
+df = data.frame(ldef,fdef)
+df = df[order(ldef),]
+id = rep(1:27,each=4)
+id = id[1:length(ldef)]
+dfid = data.frame(id,df)
+
+m = by(dfid$fdef,id,mean)
+s2 = by(dfid$fdef,id,var)
+mfdef = as.vector(m)
+vfdef = as.vector(s2)
+lnmfdef = log(mfdef)
+lnvfdef = log(vfdef)
+
+## Fit power function model
+out2 = lm(lnvfdef~lnmfdef)
+summary(out2)
+
+## Plot power function model with power function
+par(mfrow=c(1,1),cex=1.25)
+plot(lnmfdef,lnvfdef,xlim=c(1,5),ylim=c(-1,6),
+     ylab="ln(Replicate Variances)", xlab="ln(Replicate Means)",
+     main="Fit for Estimating Weights", cex=1.25, col="blue")
+abline(reg=out2)
+```
+The numerical fitting results and the plot of the replicate variances against the replicate means shows that a linear fit provides a reasonable fit with an estimated slope of 1.69.
+
+We used an estimate of 1.5 for the exponent in the weighting function.
+
+### Residual Plot for Weight Function
+
+```{r}
+
+## Plot residuals from power function model
+par(mfrow=c(1,1),cex=1.25)
+plot(lnmfdef,out2$residuals, main="Residuals from Weight Estimation Fit",
+     ylab="Residuals", xlab="ln(Replicate Means)",ylim=c(-2,2),
+     xlim=c(1,5), cex=1.25, col="blue")
+abline(h=0)
+
+```
+The residual plot from the fit to determine an appropriate weighting function reveals no obvious problems
+
+### Numerical Results from Weighted Fit
+
+The weighted fit of the model that relates the field measurements to the lab measurements is shown below.
+
+```{r}
+## Weighted regression analysis
+w = 1/(ldef**1.5)
+outw = lm(fdef~ldef,weight=w)
+summary(outw)
+wresid = weighted.residuals(outw)
+```
+The resulting slope and intercept are 0.81 and 2.35, respectively. These are compared to a slope of 0.73 and an intercept of 4.99 in the original model.
+### Plot of Predicted Values
+
+```{r}
+## Plot data with overlaid weighted regression function
+par(mfrow=c(1,1),cex=1.25)
+plot(ldef,fdef,ylab="Field Defect Size", xlab="Lab Defect Size",
+     col="blue")
+abline(reg=outw)
+title("Alaska Pipeline Data with Weighted Fit",line=2)
+title("Weights=1/(Lab Defect Size)**1.5",line=1)
+
+
+```
+The plot of the predicted values with the data indicates a good fit.
+
+### Diagnostic Plots of Weighted Residuals
+
+```{r}
+## Residual 6-plot
+par(mfrow=c(3,2))
+plot(ldef,fdef,xlab="Lab Defect Size",
+     ylab="Field Defect Size",main="Field Defect Size vs Lab Defect Size")
+abline(reg=outw)
+plot(ldef,wresid,ylab="Residuals",xlab="Lab Defect Size",
+     main="Residuals vs Lab Defect Size")
+plot(outw$fitted.values,wresid,ylab="Residuals",xlab="Predicted",
+     main="Residual vs Predicted")
+plot(wresid[2:len],wresid[1:len-1],ylab="Residuals",
+     xlab="Lag 1 Residuals",main="Lag Plot")
+hist(wresid,ylab="Frequency",xlab="Residuals",main="Histogram")
+qqnorm(wresid,main="Normal Probability Plot")
+```
+We need to verify that the weighting did not result in the other regression assumptions being violated. A 6-plot, after weighting the residuals, indicates that the regression assumptions are satisfied.
+
+### Plot of Weighted Residuals vs Lab Defect Size
+
+```{r}
+## Plot weighted residuals versus lab defect size
+par(mfrow=c(1,1),cex=1.25)
+plot(ldef,wresid,ylab="Residuals",xlab="Lab Defect Size",
+     main="Residuals from Weighted Fit")
+abline(h=0)
+```
+In order to check the assumption of homogeneous variances for the errors in more detail, we generate a full sized plot of the weighted residuals versus the predictor variable. This plot suggests that the errors now have homogeneous variances.
+
+## Compare the Fits
+It is interesting to compare the results of the three fits:
+1.Unweighted fit
+2.Transformed fit
+3.Weighted fit
+
+###Plot of Fits with Data
+
+```{r}
+##  Generate plot to compare three fits
+xval = seq(min(ldef),max(ldef))
+yu = predict.lm(out,data.frame(ldef=xval))
+yt = exp(outt$coef[1]+outt$coef[2]*log(xval))
+yw = predict.lm(outw,data.frame(ldef=xval))
+
+par(mfrow=c(1,1),cex=1.25)
+plot(ldef,fdef,ylab="Field Defect Size", xlab="Lab Defect Size",
+     xlim=c(0,90),ylim=c(0,90), cex=.85)
+lines(x=xval,y=yu,lty=1, col="red")
+lines(x=xval,y=yt,lty=2, col="black")
+lines(x=xval,y=yw,lty=3, col="blue")
+legend(85,legend=c("Unweighted Fit","Transformed Fit","Weighted Fit"),
+       lty=c(1,2,3), col=c("red","black","blue"))
+title("Data with Unweighted Line, WLS Fit,",line=2)
+title("and Fit Using Transformed Variables",line=1)
+
+```
+This plot shows that, compared to the original fit, the transformed and weighted fits generate smaller predicted values for low values of lab defect size and larger predicted values for high values of lab defect size. The three fits match fairly closely for intermediate values of lab defect size. The transformed and weighted fit tend to agree for the low values of lab defect size. However, for large values of lab defect size, the weighted fit tends to generate higher values for the predicted values than does the transformed fit.
+
+###Conclusion
+
+Although the original fit was not bad, it violated the assumption of homogeneous variances for the error term. Both the fit of the transformed data and the weighted fit successfully address this problem without violating the other regression assumptions.
+
+
+

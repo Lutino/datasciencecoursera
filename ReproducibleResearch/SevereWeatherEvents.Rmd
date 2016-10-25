@@ -1,0 +1,285 @@
+---
+title: "Severe weather Effects on Economy and Publick Health in the US"
+author: "Patrick L"
+date: "October 22, 2016"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, cache=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Synopsis.
+
+Did you know that every year in the US, Drought and Flood alone cause upward to **27.5 billions** in damages? This is a finding from the analysis of 61 years of reported economic damages, as shown in this report. For the policy maker, understanding the effects of these meteorological events on the economy and on public health, could guide the allocation of emergency ressources, which could be the difference between a resilient community with a vibrant economy and a catastrophe further compounded by the lack of response from appropriate authorities. This reports attempts to find, from a historical perspective, what type of weather events has caused, over the last 61 years period in the US:
+
+- the most harmful effect on population health
+- the greatest economic impacts
+
+Mining of the NOAA Storm Database found that over 2 decades starting in 1996:
+
+- Tornadoes were a danger to public health. They caused the highest level of fatalities and injuries with well over 85000 recorded cases, 
+- Drought and floods were the most disastrous to the economy, with a combined $27.5bn loss on average annually^1^.
+
+These results do not account for all possible weather events, hence could be considered conservative.
+
+The analysis is based on NOAA's events classification method documented [here](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) and the data from the [Storm Database](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2). 
+
+Before cleaning and processing, it’s very important to research the raw data under investigation. In this particular case web research revealed what preliminary exploratory analysis did not: different types of weather event have been recorded for different numbers of years. Only since January 1996 have all event types been recorded each year. For that reason, this report only considers the last ~20 year period (Jan 1996-July 2016 inclusive).
+
+## Data Processing
+
+### Downloading data from the Web
+
+The first thing needed is to download the weather database file fron the interwebs. A local data folder is created for that purpose and will contain the zipped file.
+```{r}
+#Check if a data folder exists, if not create
+if(!file.exists("data")){
+  dir.create("data")
+}
+#setwd("data")
+
+# get data from the web
+fileUrl <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+destinationFile="./data/StormData.csv.bz2"
+
+if(!file.exists(destinationFile)){
+  download.file(fileUrl,destfile=destinationFile,method="curl")
+}
+
+```
+### Loading and Processing the Raw Data
+
+The raw data is loaded from the database into the *weatherData* data frame.
+
+```{r}
+# load data from file if not loaded already
+if (!exists("weatherData"))
+  weatherData <- read.csv(destinationFile)
+
+```
+Let's peek into the data with the str() command.
+
+```{r}
+str(weatherData)
+```
+Couple of observations can be made:
+
+1. Even though there is a 'BGN TIME' field, the BGN_DATE field includes the time.
+2. The output seems to suggest (from the STATE attribute) that there is data for 72 differents US STATES in the database. Since we do care much about localizing weather events, we'll ignore it.
+3. The Storm Data Event Table (Table 2.1.1 in Instruction Document, Page 6) alludes to the existence of 48 types of events. However, the EVTYPE attribute identifies 985 unique type of events. 
+
+```{r}
+names(weatherData)
+# head(weatherData)
+```
+Further exploration of the data might be useful. But before, let's subset the data and extract only attributes that are meaningful.
+```{r}
+weatherData.subset <- weatherData [,c("BGN_DATE","EVTYPE","FATALITIES","INJURIES","PROPDMG","PROPDMGEXP","CROPDMG","CROPDMGEXP")]
+```
+From observation #1, we can fix the date attribute to reflect only the date and not the time. Going even further, we'll keep only the year the event was recorded.
+```{r}
+weatherData.subset$BGN_DATE = as.numeric(format(as.Date(weatherData$BGN_DATE,format = "%m/%d/%Y"),"%Y"))
+summary(weatherData.subset$BGN_DATE)
+```
+as shown in teh summary above, we have 61 years worth of recorded events, from 1950 to 2011. 
+```{r}
+levels(weatherData.subset$PROPDMGEXP)
+levels(weatherData.subset$CROPDMGEXP)
+
+```
+As seen above, couple of attributes (PROPDMGEXP and PROPDMGEXP) are labelled for the multiplier to the recorded property (PROPDMG) and crop (CROPDMG) damage amount. Some labels are letters that need to be changed to their equivalent exponent values. For example K or k will be replaced by 3 (i.e: k stands for 10e3) and ""  - ? + will be replaced by 0.
+```{r}
+levels(weatherData.subset$PROPDMGEXP) <- c(0,0,0,0,0,1,2,3,4,5,6,7,8,9,2,2,3,6,6)
+weatherData.subset$PROPDMGEXP <- as.numeric(weatherData.subset$PROPDMGEXP)
+
+levels(weatherData.subset$CROPDMGEXP) <- c(0,0,0,2,9,2,2,6,6)
+weatherData.subset$CROPDMGEXP <- as.numeric(weatherData.subset$CROPDMGEXP)
+```
+From observation #3, another foray into the values recorded in EVTYPE showed that recordings were made using both upper and lower case characters. This could lead to a possible separation of event types that are actually identical. Same could be said of the multiple spelling of the same type of events. The event table identifies only one type of thunderstom event but the data actually contains a multitude of variations.
+The attemps at a solution to the aforementioned issues consist in turning all EVTYPE to upper case and then correcting few of the one that could be identified.
+
+```{r}
+# Uppercase all EVTYPES
+weatherData.subset$EVTYPE = toupper(as.character(weatherData.subset$EVTYPE))
+
+# this function replaces an occurence of the word that is submitted by the equivalent type in the Event table
+fixEventType <- function(txt){
+       if( sum(grepl("HAIL",txt)) )
+    return ("HAIL")
+  else if ( sum(grepl("TSTM",txt)))
+    return ("THUNDERSTORM WIND")
+  else if ( sum(grepl("THUNDER",txt)))
+    return ("THUNDERSTORM WIND")
+  else if ( sum(grepl("FLOOD",txt)))
+    return ("FLASH FLOOD")
+  else if ( sum(grepl("TORN",txt)))
+    return ("TORNADO")
+  else if ( sum(grepl("FLASH",txt)))
+    return ("FLASH FLOOD")
+  else if ( sum(grepl("HEAT",txt)))
+    return ("EXCESSIVE HEAT")
+  else 
+    return (txt)
+  
+}
+weatherData.subset$EVTYPE <- sapply(weatherData.subset$EVTYPE, FUN=fixEventType)
+# Convert back to factor
+weatherData.subset$EVTYPE <- as.factor(weatherData.subset$EVTYPE)
+# Count the numbers of unique types of events
+length(unique(weatherData.subset$EVTYPE))
+```
+The correction in EVTYPE attribute fixed 348 types of mislabeled records and brought the numer of unique type of events to 637. 
+This is still far from the 48 types in the documentation but would provide us with a more accurate figure than before.
+
+Now we need to evaluete the total cost of each weather occurence. For that we'll add two columns in the data: one for the total Property damage cost and another for the total crop damage.
+```{r}
+weatherData.subset$PROPDMGTOT <- weatherData.subset$PROPDMG*10^weatherData.subset$PROPDMGEXP
+weatherData.subset$CROPDMGTOT <- weatherData.subset$CROPDMG*10^weatherData.subset$CROPDMGEXP
+
+```
+Based on that, we can summarize the costs of each event type, sorted in decreasing order of cost, and get the 5 most impactful.
+```{r}
+top5.propdmg <- sort(tapply(weatherData.subset$PROPDMGTOT, weatherData.subset$EVTYPE, sum), decreasing = TRUE)[1:5]
+top5.cropdmg <- sort(tapply(weatherData.subset$CROPDMGTOT, weatherData.subset$EVTYPE, sum), decreasing = TRUE)[1:5]
+top5.fatalities <- sort(tapply(weatherData.subset$FATALITIES, weatherData.subset$EVTYPE, sum), decreasing = TRUE)[1:5]
+top5.injuries <- sort(tapply(weatherData.subset$INJURIES, weatherData.subset$EVTYPE, sum), decreasing = TRUE)[1:5]
+
+```
+We can look at the trend over time for each of the metrics
+```{r}
+yty.propdmg <- tapply(weatherData.subset$PROPDMGTOT, weatherData.subset$BGN_DATE, sum)
+yty.cropdmg <- tapply(weatherData.subset$CROPDMGTOT, weatherData.subset$BGN_DATE, sum)
+yty.fatalities <- tapply(weatherData.subset$FATALITIES, weatherData.subset$BGN_DATE, sum)
+yty.injuries <- tapply(weatherData.subset$INJURIES, weatherData.subset$BGN_DATE, sum)
+
+# Normalize the data given the range of values
+yty.injuries.norm <- (yty.injuries - min(yty.injuries))/(max(yty.injuries)-min(yty.injuries))
+yty.fatalities.norm <- (yty.fatalities - min(yty.fatalities))/(max(yty.fatalities)-min(yty.fatalities))
+
+
+```
+
+## Results
+
+### 60 years Impact of Extreme Weather Events
+
+```{r fig.width=8}
+par(mar = c(5,5,2,5))
+plot( names(yty.injuries),
+      yty.injuries, 
+      type = "b", 
+      col=rgb(0.2,0.4,0.1,0.7) , 
+      xlab = "Year", 
+      ylab = "Fatalities",
+      bty="l"
+      )
+
+par(new = T)
+plot( names(yty.fatalities),
+      yty.fatalities, 
+      type = "b", 
+      pch=19,
+      col=rgb(0.8,0.4,0.1,0.7),
+      axes = F,
+      xlab=NA, ylab=NA, cex=1.2
+      )
+
+axis(side = 4)
+mtext(side = 4, line = 3, 'Injuries')
+
+# Add a legend
+legend("bottomleft", 
+  legend = c("Fatalities", "Injuries"), 
+  col = c(rgb(0.2,0.4,0.1,0.7), 
+  rgb(0.8,0.4,0.1,0.7)), 
+  pch = c(17,19), 
+  bty = "n", 
+  pt.cex = 2, 
+  cex = 1.2, 
+  text.col = "black", 
+  horiz = F , 
+  inset = c(0.1, 0.7))
+title("60 years Public Health Effect of Extreme Weather Events")
+
+```
+
+```{r}
+par(mar = c(5,5,2,5))
+plot( names(yty.propdmg),
+      yty.propdmg/1e12, 
+      type = "b", 
+      pch=17,
+      col=rgb(0.4,0.2,0.1,0.7) , 
+      xlab = "Year", 
+      ylab = "Properties Damage ( Billions $)",
+      bty="l"
+      )
+
+par(new = T)
+plot( names(yty.cropdmg),
+      yty.cropdmg/1e6, 
+      type = "b", 
+      pch=19,
+      col=rgb(0.9,0.2,0.1,0.7),
+      axes = F,
+      xlab=NA, ylab=NA, cex=1.2
+      )
+
+axis(side = 4)
+mtext(side = 4, line = 3, 'Crop Damage ( Millions $)')
+
+# Add a legend
+legend("bottomleft", 
+  legend = c("Properties Damage", "Crop Damage"), 
+  col = c(rgb(0.4,0.2,0.1,0.7), 
+  rgb(0.9,0.2,0.1,0.7)), 
+  pch = c(17,19), 
+  bty = "n", 
+  pt.cex = 2, 
+  cex = 1.2, 
+  text.col = "black", 
+  horiz = F , 
+  inset = c(0.1, 0.7))
+
+title("60 years Economic Impact of Extreme Weather Events")
+
+```
+
+### Impact on the Economy
+
+#### Property Damage from Weather Events
+```{r}
+print("Property Damage in Trillions of Dollars from 1950 to 2011")
+top5.propdmg / 1e12
+```
+*Flash Flood* had the greatest impact by causing *1.6 Trillions* of dollars in property damages
+
+#### Agricultural impact of Weather Events
+```{r}
+top5.cropdmg/1e6
+```
+The agricultural impact was paradoxically felt greatly when caused first by *Drought* and then by *Floods*
+
+### Weather Events - Impact on Public Health
+
+#### Fatalities from Weather Events
+```{r}
+top5.fatalities
+```
+The greater number of fatalities are caused first by *Tornadoes* and second by *Excessive Heat*
+
+#### Injuries from Weather Events
+```{r}
+top5.injuries
+```
+The cause of most injuries are manly *tornadoes* again and then by *Thunderstorm winds*
+
+
+## Conclusion
+
+*Tornadoes* have had the greatest impact on public health over the 61 years period from 1950 to 2011 with an average of 92 deaths and 1500 injuries every year. On the other hand, the biggest economical impact was caused by both *Drought* and *Floods*
+
+
+ ^1^ Annual average based on data from 1950 to 2011. Recents years not included.
+

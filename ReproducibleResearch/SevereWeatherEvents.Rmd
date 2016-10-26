@@ -1,20 +1,23 @@
 ---
-title: "Severe weather Effects on Economy and Publick Health in the US"
+title: "Severe weather Effects on Economy and Public Health in the US"
 author: "Patrick L"
 date: "October 22, 2016"
-output: pdf_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE, cache=TRUE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Synopsis.
+
+## Executive Summary
 
 Did you know that every year in the US, Drought and Flood alone cause upward to **27.5 billions** in damages? This is a finding from the analysis of 61 years of reported economic damages, as shown in this report. For the policy maker, understanding the effects of these meteorological events on the economy and on public health, could guide the allocation of emergency ressources, which could be the difference between a resilient community with a vibrant economy and a catastrophe further compounded by the lack of response from appropriate authorities. This reports attempts to find, from a historical perspective, what type of weather events has caused, over the last 61 years period in the US:
 
 - the most harmful effect on population health
 - the greatest economic impacts
+
+## Synopsis.
 
 Mining of the NOAA Storm Database found that over 2 decades starting in 1996:
 
@@ -23,16 +26,21 @@ Mining of the NOAA Storm Database found that over 2 decades starting in 1996:
 
 These results do not account for all possible weather events, hence could be considered conservative.
 
-The analysis is based on NOAA's events classification method documented [here](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) and the data from the [Storm Database](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2). 
+The analysis is based on NOAA's events classification method documented [here](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) and the data from the [Storm Database](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2). The following steps are used to derive the most damaging weather events:
 
-Before cleaning and processing, it’s very important to research the raw data under investigation. In this particular case web research revealed what preliminary exploratory analysis did not: different types of weather event have been recorded for different numbers of years. Only since January 1996 have all event types been recorded each year. For that reason, this report only considers the last ~20 year period (Jan 1996-July 2016 inclusive).
+1. The raw data is pre-processed (cleaned). Here the goal is to clean recordings of the EVTYPE attribute as much as possible
+2. The pre-processed data is subset to retain only those properties that are useful in answering our question
+3. The date attribute is modified to retain only the year the event is recorded
+4. A new attribute is added to the subset (PROPDMGTOT and cROPDMGTOT). It captures the total damage of each event, using their corresponding Exponent (PROPDMGEXP, and CROPDMGEXP).
+5. The overall total damage is obtained for each type of event by summation of the costs, respectively for FATALITIES, INJURIES, PROPDMGTOT, and CROPDMGTOT. The summary is displayed
+6. The overall total damage is obtained for every year an event was recorded, by summation of the costs, respectively for FATALITIES, INJURIES, PROPDMGTOT, and CROPDMGTOT. A graphical representation is shown.
 
 ## Data Processing
 
 ### Downloading data from the Web
 
 The first thing needed is to download the weather database file fron the interwebs. A local data folder is created for that purpose and will contain the zipped file.
-```{r}
+```{r download}
 #Check if a data folder exists, if not create
 if(!file.exists("data")){
   dir.create("data")
@@ -52,7 +60,7 @@ if(!file.exists(destinationFile)){
 
 The raw data is loaded from the database into the *weatherData* data frame.
 
-```{r}
+```{r loadingdata}
 # load data from file if not loaded already
 if (!exists("weatherData"))
   weatherData <- read.csv(destinationFile)
@@ -60,7 +68,7 @@ if (!exists("weatherData"))
 ```
 Let's peek into the data with the str() command.
 
-```{r}
+```{r rawdatapeek}
 str(weatherData)
 ```
 Couple of observations can be made:
@@ -69,27 +77,27 @@ Couple of observations can be made:
 2. The output seems to suggest (from the STATE attribute) that there is data for 72 differents US STATES in the database. Since we do care much about localizing weather events, we'll ignore it.
 3. The Storm Data Event Table (Table 2.1.1 in Instruction Document, Page 6) alludes to the existence of 48 types of events. However, the EVTYPE attribute identifies 985 unique type of events. 
 
-```{r}
+```{r checkheaders}
 names(weatherData)
 # head(weatherData)
 ```
 Further exploration of the data might be useful. But before, let's subset the data and extract only attributes that are meaningful.
-```{r}
+```{r subsetrawdata}
 weatherData.subset <- weatherData [,c("BGN_DATE","EVTYPE","FATALITIES","INJURIES","PROPDMG","PROPDMGEXP","CROPDMG","CROPDMGEXP")]
 ```
 From observation #1, we can fix the date attribute to reflect only the date and not the time. Going even further, we'll keep only the year the event was recorded.
-```{r}
+```{r cropdate}
 weatherData.subset$BGN_DATE = as.numeric(format(as.Date(weatherData$BGN_DATE,format = "%m/%d/%Y"),"%Y"))
 summary(weatherData.subset$BGN_DATE)
 ```
 as shown in teh summary above, we have 61 years worth of recorded events, from 1950 to 2011. 
-```{r}
+```{r damageexponent}
 levels(weatherData.subset$PROPDMGEXP)
 levels(weatherData.subset$CROPDMGEXP)
 
 ```
 As seen above, couple of attributes (PROPDMGEXP and PROPDMGEXP) are labelled for the multiplier to the recorded property (PROPDMG) and crop (CROPDMG) damage amount. Some labels are letters that need to be changed to their equivalent exponent values. For example K or k will be replaced by 3 (i.e: k stands for 10e3) and ""  - ? + will be replaced by 0.
-```{r}
+```{r ChangingExponents}
 levels(weatherData.subset$PROPDMGEXP) <- c(0,0,0,0,0,1,2,3,4,5,6,7,8,9,2,2,3,6,6)
 weatherData.subset$PROPDMGEXP <- as.numeric(weatherData.subset$PROPDMGEXP)
 
@@ -99,7 +107,7 @@ weatherData.subset$CROPDMGEXP <- as.numeric(weatherData.subset$CROPDMGEXP)
 From observation #3, another foray into the values recorded in EVTYPE showed that recordings were made using both upper and lower case characters. This could lead to a possible separation of event types that are actually identical. Same could be said of the multiple spelling of the same type of events. The event table identifies only one type of thunderstom event but the data actually contains a multitude of variations.
 The attemps at a solution to the aforementioned issues consist in turning all EVTYPE to upper case and then correcting few of the one that could be identified.
 
-```{r}
+```{r CleaningEventTypes}
 # Uppercase all EVTYPES
 weatherData.subset$EVTYPE = toupper(as.character(weatherData.subset$EVTYPE))
 
@@ -133,13 +141,13 @@ The correction in EVTYPE attribute fixed 348 types of mislabeled records and bro
 This is still far from the 48 types in the documentation but would provide us with a more accurate figure than before.
 
 Now we need to evaluete the total cost of each weather occurence. For that we'll add two columns in the data: one for the total Property damage cost and another for the total crop damage.
-```{r}
+```{r CreatingTotalCost}
 weatherData.subset$PROPDMGTOT <- weatherData.subset$PROPDMG*10^weatherData.subset$PROPDMGEXP
 weatherData.subset$CROPDMGTOT <- weatherData.subset$CROPDMG*10^weatherData.subset$CROPDMGEXP
 
 ```
 Based on that, we can summarize the costs of each event type, sorted in decreasing order of cost, and get the 5 most impactful.
-```{r}
+```{r Top5}
 top5.propdmg <- sort(tapply(weatherData.subset$PROPDMGTOT, weatherData.subset$EVTYPE, sum), decreasing = TRUE)[1:5]
 top5.cropdmg <- sort(tapply(weatherData.subset$CROPDMGTOT, weatherData.subset$EVTYPE, sum), decreasing = TRUE)[1:5]
 top5.fatalities <- sort(tapply(weatherData.subset$FATALITIES, weatherData.subset$EVTYPE, sum), decreasing = TRUE)[1:5]
@@ -147,7 +155,7 @@ top5.injuries <- sort(tapply(weatherData.subset$INJURIES, weatherData.subset$EVT
 
 ```
 We can look at the trend over time for each of the metrics
-```{r}
+```{r YearToYear}
 yty.propdmg <- tapply(weatherData.subset$PROPDMGTOT, weatherData.subset$BGN_DATE, sum)
 yty.cropdmg <- tapply(weatherData.subset$CROPDMGTOT, weatherData.subset$BGN_DATE, sum)
 yty.fatalities <- tapply(weatherData.subset$FATALITIES, weatherData.subset$BGN_DATE, sum)
@@ -164,7 +172,7 @@ yty.fatalities.norm <- (yty.fatalities - min(yty.fatalities))/(max(yty.fatalitie
 
 ### 60 years Impact of Extreme Weather Events
 
-```{r fig.width=8}
+```{r YearToYearFigureHealth fig.width=8}
 par(mar = c(5,5,2,5))
 plot( names(yty.injuries),
       yty.injuries, 
@@ -204,7 +212,7 @@ title("60 years Public Health Effect of Extreme Weather Events")
 
 ```
 
-```{r}
+```{r YearToYearFigureEconomy}
 par(mar = c(5,5,2,5))
 plot( names(yty.propdmg),
       yty.propdmg/1e12, 
@@ -249,14 +257,14 @@ title("60 years Economic Impact of Extreme Weather Events")
 ### Impact on the Economy
 
 #### Property Damage from Weather Events
-```{r}
+```{r CostSummaryPropertyDamage}
 print("Property Damage in Trillions of Dollars from 1950 to 2011")
 top5.propdmg / 1e12
 ```
 *Flash Flood* had the greatest impact by causing *1.6 Trillions* of dollars in property damages
 
 #### Agricultural impact of Weather Events
-```{r}
+```{r CostSummaryCropDamage}
 top5.cropdmg/1e6
 ```
 The agricultural impact was paradoxically felt greatly when caused first by *Drought* and then by *Floods*
@@ -264,13 +272,13 @@ The agricultural impact was paradoxically felt greatly when caused first by *Dro
 ### Weather Events - Impact on Public Health
 
 #### Fatalities from Weather Events
-```{r}
+```{r CostSummaryFatalities}
 top5.fatalities
 ```
 The greater number of fatalities are caused first by *Tornadoes* and second by *Excessive Heat*
 
 #### Injuries from Weather Events
-```{r}
+```{r }
 top5.injuries
 ```
 The cause of most injuries are manly *tornadoes* again and then by *Thunderstorm winds*
